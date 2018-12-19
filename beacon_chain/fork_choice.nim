@@ -69,5 +69,6 @@ func getLatestAttestationTarget*() =
 
 func forkChoice*(pool: AttestationPool, oldHead, newBlock: BeaconBlock): bool =
   # This will return true if the new block is accepted over the old head block
-  discard
+  # TODO actual criteria, but something kind of sane to start with
+  oldHead.state_root == newBlock.parent_root
 

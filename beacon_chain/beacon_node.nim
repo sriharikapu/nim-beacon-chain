@@ -23,6 +23,7 @@ const
 
   topicBeaconBlocks = "ethereum/2.1/beacon_chain/blocks"
   topicAttestations = "ethereum/2.1/beacon_chain/attestations"
+  topicProposal = "ethereum/2.1/beacon_chain/proposal"
 
 proc ensureNetworkKeys*(dataDir: string): KeyPair =
   # TODO:
@@ -214,6 +215,20 @@ proc processBlocks*(node: BeaconNode) {.async.} =
     if b.slot mod EPOCH_LENGTH == 0:
       node.scheduleCycleActions()
       node.attestations.discardHistoryToSlot(b.slot.int)
+
+  node.network.subscribe(topicProposal) do (p: ProposalSignedData):
+    var attestation : Attestation
+
+    # TODO verify fork-choice rule
+    # TODO don't assume one's an attester
+    let signedProposal = await signBlockProposal(attachedValidator, p)
+    attestation.aggregate_signature = signedProposal
+    attestation.data.slot = p.slot
+    attestation.data.shard = p.shard
+    attestation.data.beacon_block_root = p.block_root
+    attestation.data.justified_slot = node.beaconState.justified_slot
+
+    await node.network.broadcast(topicAttestations, attestation)
 
   node.network.subscribe(topicAttestations) do (a: Attestation):
     # Attestations are verified as aggregated groups
