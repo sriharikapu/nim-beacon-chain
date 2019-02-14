@@ -9,7 +9,7 @@ trap "trap - SIGTERM && kill -- -$$" SIGINT SIGTERM EXIT
 : ${SKIP_BUILDS:=""}
 : ${BUILD_OUTPUTS_DIR:="./build"}
 
-NUMBER_OF_VALIDATORS=99
+NUMBER_OF_VALIDATORS=199
 
 cd $(dirname "$0")
 SIMULATION_DIR=$PWD/data
@@ -48,7 +48,10 @@ if [ -f $MASTER_NODE_ADDRESS_FILE ]; then
   rm $MASTER_NODE_ADDRESS_FILE
 fi
 
-for i in $(seq 0 9); do
+# "for i in $(seq -f %01g 00 09); do" instead of "for i in $(seq 0 9); do"
+# will block, but we need a left-pad ...
+# The following requires a recent enough bash
+for i in {0..9}; do
   BOOTSTRAP_NODES_FLAG="--bootstrapNodesFile:$MASTER_NODE_ADDRESS_FILE"
 
   if [[ "$i" == "0" ]]; then
@@ -62,6 +65,8 @@ for i in $(seq 0 9); do
 
   DATA_DIR=$SIMULATION_DIR/node-$i
 
+  # We're missing the "XX0" validators intentionally to see how
+  # how the network copes with 10% missing validators
   $BEACON_NODE_BIN \
     --dataDir:"$DATA_DIR" \
     --validator:"$SIMULATION_DIR/validator-${i}1.json" \
@@ -73,8 +78,8 @@ for i in $(seq 0 9); do
     --validator:"$SIMULATION_DIR/validator-${i}7.json" \
     --validator:"$SIMULATION_DIR/validator-${i}8.json" \
     --validator:"$SIMULATION_DIR/validator-${i}9.json" \
-    --tcpPort:5000$i \
-    --udpPort:5000$i \
+    --tcpPort:500$i \
+    --udpPort:500$i \
     --stateSnapshot:"$SNAPSHOT_FILE" \
     $BOOTSTRAP_NODES_FLAG &
 done
