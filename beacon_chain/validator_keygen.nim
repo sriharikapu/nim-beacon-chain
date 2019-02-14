@@ -42,7 +42,7 @@ cli do (validators: int,
 
   for i in 1 .. validators:
     let (pubKey, privKey, randaoCommitment) =
-      genSingleValidator(outputDir / &"validator-{i:02}.json")
+      genSingleValidator(outputDir / &"validator-{i:03}.json")
 
     let
       withdrawalCredentials = makeFakeHash(i)

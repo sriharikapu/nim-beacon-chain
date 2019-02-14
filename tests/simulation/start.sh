@@ -9,7 +9,7 @@ trap "trap - SIGTERM && kill -- -$$" SIGINT SIGTERM EXIT
 : ${SKIP_BUILDS:=""}
 : ${BUILD_OUTPUTS_DIR:="./build"}
 
-NUMBER_OF_VALIDATORS=199
+NUMBER_OF_VALIDATORS=299
 
 cd $(dirname "$0")
 SIMULATION_DIR=$PWD/data
@@ -41,20 +41,18 @@ if [ ! -f $SNAPSHOT_FILE ]; then
     --out:$SNAPSHOT_FILE
 fi
 
-MASTER_NODE_ADDRESS_FILE="$SIMULATION_DIR/node-0/beacon_node.address"
+# ⚠ if padding change the node-0 to node-00
+MASTER_NODE_ADDRESS_FILE="$SIMULATION_DIR/node-00/beacon_node.address"
 
 # Delete any leftover address files from a previous session
 if [ -f $MASTER_NODE_ADDRESS_FILE ]; then
   rm $MASTER_NODE_ADDRESS_FILE
 fi
 
-# "for i in $(seq -f %01g 00 09); do" instead of "for i in $(seq 0 9); do"
-# will block, but we need a left-pad ...
-# The following requires a recent enough bash
-for i in {0..9}; do
+for i in {00..29}; do
   BOOTSTRAP_NODES_FLAG="--bootstrapNodesFile:$MASTER_NODE_ADDRESS_FILE"
 
-  if [[ "$i" == "0" ]]; then
+  if [[ "$i" == "00" ]]; then
     BOOTSTRAP_NODES_FLAG=""
   else
     # Wait for the master node to write out its address file
