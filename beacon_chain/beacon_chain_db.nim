@@ -89,3 +89,10 @@ proc getBlock*(db: BeaconChainDB, hash: Eth2Digest): BeaconBlock =
   if not db.getBlock(hash, result):
     raise newException(Exception, "Block not found")
 
+proc getBlock*(db: BeaconChainDB, slot: uint64, output: var BeaconBlock): bool =
+  let h = db.backend.get(slotToBlockHashKey(slot))
+  if h.len == sizeof(Eth2Digest):
+    var hash: Eth2Digest
+    hash.data[0 .. ^1] = h
+    result = db.getBlock(hash, output)
+

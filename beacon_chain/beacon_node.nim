@@ -3,7 +3,7 @@ import
   chronos, chronicles, confutils, eth/[p2p, keys],
   spec/[datatypes, digest, crypto, beaconstate, helpers, validator], conf, time,
   state_transition, fork_choice, ssz, beacon_chain_db, validator_pool, extras,
-  mainchain_monitor, sync_protocol, gossipsub_protocol, trusted_state_snapshots,
+  mainchain_monitor, gossipsub_protocol, trusted_state_snapshots,
   eth/trie/db, eth/trie/backends/rocksdb_backend
 
 type
@@ -18,7 +18,7 @@ type
     mainchainMonitor: MainchainMonitor
     lastScheduledEpoch: EpochNumber
     headBlock: BeaconBlock
-    headBlockRoot: Eth2Digest
+    headBlockRoot*: Eth2Digest
     blocksChildren: Table[Eth2Digest, seq[Eth2Digest]]
 
 const
@@ -30,6 +30,9 @@ const
 
   stateStoragePeriod = EPOCH_LENGTH.uint64 * 10 # Save states once per this number of slots. TODO: Find a good number.
 
+proc processBlock*(node: BeaconNode, newBlock: BeaconBlock)
+
+import sync_protocol
 
 func shortHash(x: auto): string =
   ($x)[0..7]
@@ -68,6 +71,9 @@ proc init*(T: type BeaconNode, conf: BeaconNodeConf): T =
   address.udpPort = Port(conf.udpPort)
 
   result.network = newEthereumNode(result.keys, address, 0, nil, clientId, minPeers = 1)
+  let state = result.network.protocolState(BeaconSync)
+  state.node = result
+  state.db = result.db
 
   writeFile(string(conf.dataDir) / "beacon_node.address",
             $result.network.listeningAddress)
@@ -96,30 +102,31 @@ proc sync*(node: BeaconNode): Future[bool] {.async.} =
     node.beaconState = await obtainTrustedStateSnapshot(node.db)
   else:
     node.beaconState = persistedState
-    var targetSlot = node.beaconState.getSlotFromTime()
-
-    let t = now()
-    if t < node.beaconState.genesisTime * 1000:
-      await sleepAsync int(node.beaconState.genesisTime * 1000 - t)
-
-    # TODO: change this to a full sync / block download
-    info "Syncing state from remote peers",
-      finalized_epoch = humaneEpochNum(node.beaconState.finalized_epoch),
-      target_slot_epoch = humaneEpochNum(targetSlot.slot_to_epoch)
-
-    while node.beaconState.finalized_epoch < targetSlot.slot_to_epoch:
-      var (peer, changeLog) = await node.network.getValidatorChangeLog(
-        node.beaconState.validator_registry_delta_chain_tip)
-
-      if peer == nil:
-        error "Failed to sync with any peer"
-        return false
-
-      if applyValidatorChangeLog(changeLog, node.beaconState):
-        node.db.persistState(node.beaconState)
-        node.db.persistBlock(changeLog.signedBlock)
-      else:
-        warn "Ignoring invalid validator change log", sentFrom = peer
+    await node.fullSync()
+    # var targetSlot = node.beaconState.getSlotFromTime()
+    #
+    # let t = now()
+    # if t < node.beaconState.genesisTime * 1000:
+    #   await sleepAsync int(node.beaconState.genesisTime * 1000 - t)
+    #
+    # # TODO: change this to a full sync / block download
+    # info "Syncing state from remote peers",
+    #   finalized_epoch = humaneEpochNum(node.beaconState.finalized_epoch),
+    #   target_slot_epoch = humaneEpochNum(targetSlot.slot_to_epoch)
+    #
+    # while node.beaconState.finalized_epoch < targetSlot.slot_to_epoch:
+    #   var (peer, changeLog) = await node.network.getValidatorChangeLog(
+    #     node.beaconState.validator_registry_delta_chain_tip)
+    #
+    #   if peer == nil:
+    #     error "Failed to sync with any peer"
+    #     return false
+    #
+    #   if applyValidatorChangeLog(changeLog, node.beaconState):
+    #     node.db.persistState(node.beaconState)
+    #     node.db.persistBlock(changeLog.signedBlock)
+    #   else:
+    #     warn "Ignoring invalid validator change log", sentFrom = peer
 
   return true
 
@@ -341,8 +348,7 @@ proc stateNeedsSaving(s: BeaconState): bool =
   # TODO: Come up with a better predicate logic
   s.slot mod stateStoragePeriod == 0
 
-proc processBlocks*(node: BeaconNode) =
-  node.network.subscribe(topicBeaconBlocks) do (newBlock: BeaconBlock):
+proc processBlock*(node: BeaconNode, newBlock: BeaconBlock) =
     let stateSlot = node.beaconState.slot
     info "Block received", slot = humaneSlotNum(newBlock.slot),
                            stateRoot = shortHash(newBlock.state_root),
@@ -387,6 +393,10 @@ proc processBlocks*(node: BeaconNode) =
     # 3. Peform block processing / state recalculation / etc
     #
 
+
+proc processBlocks*(node: BeaconNode) =
+  node.network.subscribe(topicBeaconBlocks) do (newBlock: BeaconBlock):
+    node.processBlock(newBlock)
     let epoch = newBlock.slot.epoch
     if epoch != node.lastScheduledEpoch:
       node.scheduleEpochActions(epoch)
